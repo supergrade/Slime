@@ -161,22 +161,30 @@ If LOAD is true, load the fasl file."
     (dolist (src files)
       (let ((dest (binary-pathname src fasl-dir)))
         (handler-case
-            (progn
-              (when (or needs-recompile
-                        (not (probe-file dest))
-                        (file-newer-p src dest))
-                (ensure-directories-exist dest)
-                ;; need to recompile SRC, so we'll need to recompile
-                ;; everything after this too.
-                (setq needs-recompile t)
-                (setq state :compile)
-                (or (compile-file src :output-file dest :print nil :verbose t)
-                    ;; An implementation may not necessarily signal a
-                    ;; condition itself when COMPILE-FILE fails (e.g. ECL)
-                    (error "COMPILE-FILE returned NIL.")))
-              (when load
-                (setq state :load)
-                (load dest :verbose t)))
+            (prog (load-problem)
+             :recompile
+               (when (or load-problem
+                         needs-recompile
+                         (not (probe-file dest))
+                         (file-newer-p src dest))
+                 (ensure-directories-exist dest)
+                 ;; need to recompile SRC, so we'll need to recompile
+                 ;; everything after this too.
+                 (setq needs-recompile t)
+                 (setq state :compile)
+                 (or (compile-file src :output-file dest :print nil :verbose t)
+                     ;; An implementation may not necessarily signal a
+                     ;; condition itself when COMPILE-FILE fails (e.g. ECL)
+                     (error "COMPILE-FILE returned NIL.")))
+               (when load
+                 (setq state :load)
+                 (handler-bind ((error (lambda (e)
+                                         (declare (ignore e))
+                                         ;; Recompile once in case it's a stale fasl.
+                                         (unless load-problem
+                                           (setf load-problem t)
+                                           (go :recompile)))))
+                     (load dest :verbose t))))
           ;; Fail as early as possible
           (serious-condition (c)
             (ecase state

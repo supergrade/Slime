@@ -2933,10 +2933,20 @@ Record compiler notes signalled as `compiler-condition's."
 (defslimefun swank-require (modules &optional filename)
   "Load the module MODULE."
   (dolist (module (ensure-list modules))
-    (unless (member (string module) *modules* :test #'string=)
-      (require module (if filename
-                          (filename-to-pathname filename)
-                          (module-filename module)))))
+    (prog (load-problem)
+     :require
+     (let ((pathname (if filename
+                         (filename-to-pathname filename)
+                         (module-filename module))))
+       (handler-bind ((error (lambda (e)
+                               (declare (ignore e))
+                               ;; Delete and retry if it's not a source-file.
+                               (unless (or filename
+                                           load-problem
+                                           (string= "lisp" (pathname-type pathname)))
+                                 (delete-file pathname)
+                                 (go :require)))))
+         (require module pathname)))))
   *modules*)
 
 (defvar *find-module* 'find-module
