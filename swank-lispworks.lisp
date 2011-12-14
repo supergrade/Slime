@@ -64,8 +64,34 @@
 
 ;;; UTF8
 
+; (ef:encode-lisp-string (string #\newline) :utf-8) in lispworks, (at least win32) returns #(13 10), unlike #(10) in other implementations
 (defimplementation string-to-utf8 (string)
-  (ef:encode-lisp-string string :utf-8))
+  (let* ((original (ef:encode-lisp-string string :utf-8)) ; original LW conversion
+         (original-length (length original))
+         (olm1 (1- original-length))
+         (buffer (make-array original-length :element-type '(unsigned-byte 8)))
+         (taken 0)
+         (read-point 0))
+    ; Replaces the array's #(13 10) pairs with #(10)
+    (loop while (< read-point original-length) do
+      (progn
+        (cond
+         ((< read-point olm1)
+          (let* ((first (aref original read-point))
+                 (next (1+ read-point))
+                 (second (aref original next)))
+            (cond
+              ((and (eql first 13) (eql second 10))
+               (setf (aref buffer taken) 10)
+               (incf read-point 2))
+              (t
+               (setf (aref buffer taken) first)
+               (setf read-point next)))))
+         (t
+          (setf (aref buffer taken) (aref original read-point))
+          (incf read-point)))
+        (incf taken)))
+    (coerce (subseq buffer 0 taken) '(array (unsigned-byte 8)))))
 
 (defimplementation utf8-to-string (octets)
   (ef:decode-external-string octets :utf-8))
